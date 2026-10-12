@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FC 에이전트</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117; --card: #161b22; --card2: #1c222b; --line: #2a313c;
+    --text: #e6edf3; --muted: #8b949e; --accent: #2ea043;
+    --win: #3fb950; --draw: #8b949e; --lose: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font-family: "Pretendard", "Malgun Gothic", sans-serif; line-height: 1.5; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 32px 16px 60px; }
+
+  header { margin-bottom: 24px; }
+  header h1 { margin: 0; font-size: 28px; }
+  header h1 span { color: var(--accent); }
+  header p { margin: 4px 0 0; color: var(--muted); }
+
+  .search { display: flex; gap: 8px; margin-bottom: 8px; }
+  input { flex: 1; min-width: 0; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line);
+          background: var(--card); color: var(--text); font-size: 15px; outline: none;
+          font-family: inherit; color-scheme: dark; }
+  input:focus { border-color: var(--accent); }
+  button { padding: 12px 18px; border: 0; border-radius: 10px; background: var(--accent);
+           color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; white-space: nowrap;
+           font-family: inherit; }
+  button:disabled { opacity: .5; cursor: default; }
+  .status { min-height: 22px; color: var(--muted); font-size: 14px; margin-bottom: 16px; }
+  .status.error { color: var(--lose); }
+  .muted { color: var(--muted); font-size: 14px; margin: 0; }
+
+  .grid { display: grid; grid-template-columns: 1.15fr 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 880px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+          padding: 20px; margin-bottom: 16px; }
+  .card h2 { margin: 0 0 14px; font-size: 17px; }
+  .card h2 small { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 6px; }
+
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  @media (max-width: 560px) { .kpis { grid-template-columns: repeat(2, 1fr); } }
+  .kpi { background: var(--card2); border-radius: 10px; padding: 12px; }
+  .kpi .label { color: var(--muted); font-size: 12px; }
+  .kpi .value { font-size: 22px; font-weight: 700; margin-top: 2px; }
+  .kpi .sub { color: var(--muted); font-size: 12px; }
+  .bad { color: var(--lose); }
+  .good { color: var(--win); }
+
+  .insights { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+  .insights li { background: var(--card2); border-left: 3px solid var(--lose);
+                 border-radius: 8px; padding: 10px 12px; font-size: 14px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 6px; border-bottom: 1px solid var(--line); text-align: left; }
+  th { color: var(--muted); font-weight: 500; }
+  .r { font-weight: 700; }
+  .r.승 { color: var(--win); } .r.무 { color: var(--draw); } .r.패 { color: var(--lose); }
+  details summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+
+  /* 전술 변경 */
+  .t-form { display: grid; grid-template-columns: 190px 1fr auto; gap: 8px; margin-bottom: 14px; }
+  @media (max-width: 560px) { .t-form { grid-template-columns: 1fr; } }
+  .t-form input { padding: 10px 12px; font-size: 14px; }
+  .t-form button { padding: 10px 14px; font-size: 14px; }
+  .t-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .t-item { background: var(--card2); border: 1px solid var(--line); color: var(--text);
+            padding: 6px 10px; font-size: 12px; font-weight: 400; border-radius: 999px; }
+  .t-item.active { border-color: var(--accent); background: #2ea04322; }
+  .t-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .t-head .del { background: transparent; color: var(--muted); padding: 4px 8px; font-size: 12px;
+                 border: 1px solid var(--line); }
+  .notice { background: #d2992222; color: #e3b341; border-radius: 8px; padding: 8px 12px;
+            font-size: 13px; margin-bottom: 10px; }
+  .chart-box { position: relative; height: 220px; margin: 12px 0 4px; }
+  td.num, th.num { text-align: right; }
+
+  /* 채팅 */
+  .chat { position: sticky; top: 16px; }
+  .chat-log { height: 460px; overflow-y: auto; display: flex; flex-direction: column;
+              gap: 10px; padding-right: 4px; margin-bottom: 12px; }
+  .msg { max-width: 88%; padding: 10px 13px; border-radius: 12px; font-size: 14px; }
+  .msg.user { align-self: flex-end; background: #1f6feb; }
+  .msg.bot { align-self: flex-start; background: var(--card2); }
+  .msg .model { display: block; color: var(--muted); font-size: 11px; margin-top: 6px; }
+  .chat-input { display: flex; gap: 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .chip { background: var(--card2); border: 1px solid var(--line); color: var(--text);
+          padding: 6px 10px; font-size: 12px; font-weight: 400; border-radius: 999px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>FC <span>에이전트</span></h1>
+    <p>내 경기 기록을 분석해주는 AI 전술 코치</p>
+  </header>
+
+  <div class="search">
+    <input id="nickname" placeholder="FC 온라인 닉네임을 입력하세요" autocomplete="off">
+    <button id="analyzeBtn">분석하기</button>
+  </div>
+  <div id="status" class="status"></div>
+
+  <div id="result" class="grid" hidden>
+    <div>
+      <section class="card">
+        <h2 id="title">경기 분석 리포트</h2>
+        <div class="kpis" id="kpis"></div>
+      </section>
+
+      <section class="card">
+        <h2>발견된 약점</h2>
+        <ul class="insights" id="insights"></ul>
+      </section>
+
+      <section class="card">
+        <h2>전술 변경 전후 비교 <small>바꾼 시점을 기록하면 효과를 비교해 드려요</small></h2>
+        <div class="t-form">
+          <input type="datetime-local" id="tDate">
+          <input id="tMemo" placeholder="무엇을 바꿨나요? 예) 수비 깊이 5→3" maxlength="100">
+          <button id="tAddBtn">기록</button>
+        </div>
+        <div class="t-list" id="tList"></div>
+        <div id="compare"></div>
+      </section>
+
+      <section class="card">
+        <h2>최근 경기</h2>
+        <table>
+          <thead><tr><th>날짜</th><th>결과</th><th>스코어</th><th>상대</th><th>점유율</th><th>슈팅(유효)</th></tr></thead>
+          <tbody id="recent"></tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <details>
+          <summary>전체 지표 보기</summary>
+          <table style="margin-top:10px"><tbody id="allStats"></tbody></table>
+        </details>
+      </section>
+    </div>
+
+    <section class="card chat">
+      <h2>AI 코치</h2>
+      <div class="chat-log" id="chatLog"></div>
+      <div class="chips">
+        <button class="chip">수비 깊이는 몇이 좋아?</button>
+        <button class="chip">역습 맞을 때 조작 요령</button>
+        <button class="chip">리드할 때 전술 변경</button>
+      </div>
+      <div class="chat-input">
+        <input id="chatInput" placeholder="코치에게 질문하기">
+        <button id="sendBtn">전송</button>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let currentNick = null;
+let chatBusy = false;
+let tactics = [];
+let selectedTacticId = null;
+let compareChart = null;
+
+// ---------- 공통 ----------
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function md(s) {
+  return esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\n/g, "<br>");
+}
+function setStatus(text, isError = false) {
+  $("#status").textContent = text;
+  $("#status").className = "status" + (isError ? " error" : "");
+}
+function fmtDate(s) {
+  return String(s).replace("T", " ").slice(5, 16);
+}
+function nowLocal() {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 16);
+}
+async function api(url, options = {}) {
+  const res = await fetch(url, { headers: { "Content-Type": "application/json" }, ...options });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || `오류가 발생했습니다 (${res.status})`);
+  return data;
+}
+
+// ---------- 분석 ----------
+async function runAnalysis() {
+  const nick = $("#nickname").value.trim();
+  if (!nick) return;
+  $("#analyzeBtn").disabled = true;
+  setStatus("경기 기록을 불러오는 중입니다... 처음 조회하는 닉네임은 1분 정도 걸릴 수 있어요.");
+  try {
+    const c = await api("/api/collect", { method: "POST", body: JSON.stringify({ nickname: nick }) });
+    setStatus(`새로 저장 ${c.saved}경기 · 기존 ${c.skipped}경기 — 분석 중...`);
+    const r = await api(`/api/report?nickname=${encodeURIComponent(nick)}`);
+    currentNick = nick;
+    renderReport(r);
+    $("#result").hidden = false;
+    $("#tDate").value = nowLocal();
+    await loadTactics();
+    setStatus("");
+    $("#chatLog").innerHTML = "";
+    sendChat("내 최근 경기 데이터를 보고 가장 먼저 고쳐야 할 점을 진단해줘.");
+  } catch (e) {
+    setStatus(e.message, true);
+  } finally {
+    $("#analyzeBtn").disabled = false;
+  }
+}
+
+function renderReport(r) {
+  const s = r.stats;
+  $("#title").textContent = `${r.nickname}님의 경기 분석 리포트 (최근 ${s["경기 수"]}경기)`;
+
+  const kpis = [
+    { label: "승률", value: `${s["승률"]}%`, sub: `${s["승"]}승 ${s["무"]}무 ${s["패"]}패` },
+    { label: "경기당 득점", value: s["경기당 득점"], sub: `유효슈팅 대비 ${s["내 유효슈팅 대비 득점률"]}%` },
+    { label: "경기당 실점", value: s["경기당 실점"], sub: `상대 유효슈팅 ${s["경기당 상대 유효슈팅"]}개`,
+      bad: s["경기당 실점"] > s["경기당 득점"] },
+    { label: "3골 넣고 못 이김", value: `${s["3골 이상 넣고 못 이긴 경기"]}경기`, sub: "승점을 놓친 경기",
+      bad: s["3골 이상 넣고 못 이긴 경기"] >= 3 },
+  ];
+  $("#kpis").innerHTML = kpis.map((k) => `
+    <div class="kpi">
+      <div class="label">${esc(k.label)}</div>
+      <div class="value ${k.bad ? "bad" : ""}">${esc(k.value)}</div>
+      <div class="sub">${esc(k.sub)}</div>
+    </div>`).join("");
+
+  $("#insights").innerHTML = r.insights.map((t) => `<li>${esc(t)}</li>`).join("");
+
+  $("#recent").innerHTML = r.recent.map((m) => `
+    <tr>
+      <td>${esc(fmtDate(m.match_date))}</td>
+      <td class="r ${esc(m.result)}">${esc(m.result)}</td>
+      <td>${esc(m.my_goal)} : ${esc(m.opp_goal)}</td>
+      <td>${esc(m.opp_nickname)}</td>
+      <td>${esc(m.possession)}%</td>
+      <td>${esc(m.shoot_total)} (${esc(m.shoot_effective)})</td>
+    </tr>`).join("");
+
+  $("#allStats").innerHTML = Object.entries(s).map(([k, v]) =>
+    `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join("");
+}
+
+// ---------- 전술 변경 전후 비교 ----------
+async function loadTactics() {
+  const r = await api(`/api/tactics?nickname=${encodeURIComponent(currentNick)}`);
+  tactics = r.items;
+  if (!tactics.some((t) => t.id === selectedTacticId)) {
+    selectedTacticId = tactics.length ? tactics[0].id : null;
+  }
+  renderTactics();
+}
+
+function renderTactics() {
+  $("#tList").innerHTML = tactics.map((t) => `
+    <button class="t-item ${t.id === selectedTacticId ? "active" : ""}" data-id="${t.id}">
+      ${esc(fmtDate(t.change_date))} · ${esc(t.memo)}
+    </button>`).join("");
+  document.querySelectorAll(".t-item").forEach((b) =>
+    b.addEventListener("click", () => {
+      selectedTacticId = Number(b.dataset.id);
+      renderTactics();
+    }));
+
+  const t = tactics.find((x) => x.id === selectedTacticId);
+  if (!t) {
+    if (compareChart) { compareChart.destroy(); compareChart = null; }
+    $("#compare").innerHTML = `<p class="muted">아직 기록된 전술 변경이 없습니다.
+      전술을 바꾼 시점과 내용을 기록하면, 그 전후 경기를 비교해 효과가 있었는지 보여드립니다.</p>`;
+    return;
+  }
+  renderCompare(t);
+}
+
+function renderCompare(t) {
+  const c = t.compare;
+  const fmt = (v) => (v === null || v === undefined ? "-" : v);
+  const diffCell = (row) => {
+    if (row.diff === null) return `<td class="num">-</td>`;
+    const sign = row.diff > 0 ? "+" : "";
+    const cls = row.better === null ? "" : row.better ? "good" : "bad";
+    const arrow = row.better === null ? "" : row.better ? " ▲" : " ▼";
+    return `<td class="num ${cls}">${sign}${row.diff}${arrow}</td>`;
+  };
+
+  let notice = "";
+  if (c.after_n === 0) {
+    notice = `<div class="notice">변경 이후 경기가 아직 없습니다. 경기를 더 하고 "분석하기"를 다시 누르면 비교 결과가 나옵니다.</div>`;
+  } else if (!c.enough) {
+    notice = `<div class="notice">변경 전후 경기가 각각 ${c.min_games}경기 이상 쌓여야 믿을 만한 비교가 됩니다. 아래 결과는 참고만 하세요.</div>`;
+  }
+
+  $("#compare").innerHTML = `
+    <div class="t-head">
+      <strong>${esc(t.memo)}</strong>
+      <button class="del" id="tDelBtn">기록 삭제</button>
+    </div>
+    <p class="muted">변경 전 ${c.before_n}경기 vs 변경 후 ${c.after_n}경기 (각각 최대 20경기)</p>
+    ${notice}
+    <div class="chart-box"><canvas id="compareChart"></canvas></div>
+    <table>
+      <thead><tr><th>지표</th><th class="num">변경 전</th><th class="num">변경 후</th><th class="num">변화</th></tr></thead>
+      <tbody>
+        ${c.rows.map((row) => `
+          <tr>
+            <td>${esc(row.key)}</td>
+            <td class="num">${esc(fmt(row.before))}</td>
+            <td class="num">${esc(fmt(row.after))}</td>
+            ${diffCell(row)}
+          </tr>`).join("")}
+      </tbody>
+    </table>`;
+
+  $("#tDelBtn").addEventListener("click", () => deleteTactic(t.id));
+  drawCompareChart(c);
+}
+
+function drawCompareChart(c) {
+  if (compareChart) compareChart.destroy();
+  // 단위가 같은 % 지표만 그래프로 비교
+  const keys = ["승률", "내 유효슈팅 대비 득점률", "상대 유효슈팅 대비 실점률"];
+  const rows = keys.map((k) => c.rows.find((r) => r.key === k));
+  compareChart = new Chart($("#compareChart"), {
+    type: "bar",
+    data: {
+      labels: ["승률", "내 득점률", "상대 득점률(실점률)"],
+      datasets: [
+        { label: "변경 전", data: rows.map((r) => r.before ?? 0), backgroundColor: "#6e7681", borderRadius: 4 },
+        { label: "변경 후", data: rows.map((r) => r.after ?? 0), backgroundColor: "#2ea043", borderRadius: 4 },
+      ],
+    },
+    options: {
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: "#e6edf3" } },
+        tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.raw}%` } },
+      },
+      scales: {
+        x: { ticks: { color: "#8b949e" }, grid: { display: false } },
+        y: { beginAtZero: true, max: 100, ticks: { color: "#8b949e", callback: (v) => v + "%" },
+             grid: { color: "#2a313c" } },
+      },
+    },
+  });
+}
+
+async function addTactic() {
+  const date = $("#tDate").value;
+  const memo = $("#tMemo").value.trim();
+  if (!date || !memo) {
+    setStatus("변경 시점과 변경 내용을 모두 입력해 주세요.", true);
+    return;
+  }
+  try {
+    const r = await api("/api/tactics", {
+      method: "POST",
+      body: JSON.stringify({ nickname: currentNick, change_date: date, memo }),
+    });
+    $("#tMemo").value = "";
+    selectedTacticId = r.id;
+    setStatus("");
+    await loadTactics();
+  } catch (e) {
+    setStatus(e.message, true);
+  }
+}
+
+async function deleteTactic(id) {
+  if (!confirm("이 전술 변경 기록을 삭제할까요?")) return;
+  try {
+    await api(`/api/tactics/${id}?nickname=${encodeURIComponent(currentNick)}`, { method: "DELETE" });
+    await loadTactics();
+  } catch (e) {
+    setStatus(e.message, true);
+  }
+}
+
+// ---------- AI 코치 ----------
+function addMsg(role, html) {
+  const div = document.createElement("div");
+  div.className = `msg ${role}`;
+  div.innerHTML = html;
+  $("#chatLog").appendChild(div);
+  $("#chatLog").scrollTop = $("#chatLog").scrollHeight;
+  return div;
+}
+
+async function sendChat(text) {
+  if (!currentNick || !text || chatBusy) return;
+  chatBusy = true;
+  $("#sendBtn").disabled = true;
+  addMsg("user", esc(text));
+  const bot = addMsg("bot", "분석 중입니다...");
+  try {
+    const r = await api("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ nickname: currentNick, message: text }),
+    });
+    bot.innerHTML = md(r.answer) + (r.model ? `<span class="model">${esc(r.model)}</span>` : "");
+  } catch (e) {
+    bot.innerHTML = `<span class="bad">${esc(e.message)}</span>`;
+  } finally {
+    chatBusy = false;
+    $("#sendBtn").disabled = false;
+    $("#chatLog").scrollTop = $("#chatLog").scrollHeight;
+  }
+}
+
+// ---------- 이벤트 ----------
+$("#analyzeBtn").addEventListener("click", runAnalysis);
+$("#nickname").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) runAnalysis(); });
+$("#tAddBtn").addEventListener("click", addTactic);
+$("#tMemo").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) addTactic(); });
+$("#sendBtn").addEventListener("click", () => {
+  const t = $("#chatInput").value.trim();
+  $("#chatInput").value = "";
+  sendChat(t);
+});
+$("#chatInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.isComposing) $("#sendBtn").click();
+});
+document.querySelectorAll(".chip").forEach((b) =>
+  b.addEventListener("click", () => sendChat(b.textContent)));
+</script>
+</body>
+</html>

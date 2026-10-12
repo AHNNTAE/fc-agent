@@ -1,0 +1,4 @@
+.env
+fc_agent.db
+__pycache__/
+.idea/
