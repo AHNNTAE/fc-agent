@@ -1,4 +1,5 @@
 .env
 fc_agent.db
+data/
 __pycache__/
 .idea/

@@ -1,0 +1,120 @@
+{
+  "matches": 903,
+  "records_raw": 1806,
+  "records_clean": 1510,
+  "preprocess_steps": [
+    {
+      "step": "중복 기록 제거",
+      "removed": 0,
+      "remaining": 1806
+    },
+    {
+      "step": "몰수·비정상 종료 경기 제거 (matchEndType != 0)",
+      "removed": 296,
+      "remaining": 1510
+    },
+    {
+      "step": "상대 기록이 없는 경기 제거",
+      "removed": 0,
+      "remaining": 1510
+    },
+    {
+      "step": "결과 값이 없거나 이상한 기록 제거",
+      "removed": 0,
+      "remaining": 1510
+    },
+    {
+      "step": "패스 시도 0회 기록 제거 (사실상 경기 미진행)",
+      "removed": 0,
+      "remaining": 1510
+    }
+  ],
+  "draws_excluded": 190,
+  "dataset_rows": 1320,
+  "label_counts": {
+    "win=1": 660,
+    "win=0": 660
+  },
+  "features": [
+    "possession",
+    "shoot_total",
+    "shoot_effective",
+    "effective_shot_rate",
+    "in_box_shot_ratio",
+    "shoot_heading",
+    "pass_try",
+    "pass_rate",
+    "short_pass_rate",
+    "long_pass_try",
+    "long_pass_rate",
+    "through_pass_try",
+    "through_pass_rate",
+    "dribble",
+    "tackle_try",
+    "tackle_rate",
+    "block_try",
+    "block_rate",
+    "foul",
+    "corner_kick",
+    "offside",
+    "opp_shoot_total",
+    "opp_shoot_effective"
+  ],
+  "records_with_division": 793,
+  "shots": {
+    "shots_raw": 10849,
+    "preprocess_steps": [
+      {
+        "step": "몰수·비정상 종료 경기의 슈팅 제거",
+        "removed": 1367,
+        "remaining": 9482
+      },
+      {
+        "step": "좌표가 없거나 범위(0~1)를 벗어난 슈팅 제거",
+        "removed": 4,
+        "remaining": 9478
+      },
+      {
+        "step": "결과 값이 1·2·3이 아닌 슈팅 제거",
+        "removed": 0,
+        "remaining": 9478
+      }
+    ],
+    "label_check_match_rate": 99.9,
+    "dataset_rows": 9478,
+    "label_counts": {
+      "goal=1": 4077,
+      "goal=0": 5401
+    },
+    "features": [
+      "x",
+      "y",
+      "distance",
+      "angle",
+      "type",
+      "in_penalty",
+      "assist",
+      "sp_grade",
+      "sp_level"
+    ],
+    "result_values": {
+      "3": 4802,
+      "1": 3719,
+      "2": 2328
+    },
+    "type_values": {
+      "2": 2989,
+      "3": 2379,
+      "1": 2280,
+      "6": 992,
+      "7": 914,
+      "8": 442,
+      "13": 359,
+      "14": 219,
+      "12": 102,
+      "9": 99,
+      "4": 43,
+      "10": 31
+    }
+  }
+}

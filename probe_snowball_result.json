@@ -1,0 +1,26 @@
+{
+  "seed_history_depth": [
+    [
+      1,
+      "2026-10-18 22:50:56"
+    ],
+    [
+      100,
+      "2026-09-27 13:45:43"
+    ]
+  ],
+  "calls_per_match": 1.21,
+  "matches_per_hour_estimate": 12517,
+  "same_tier_ratio": 82,
+  "calls_per_minute": 253,
+  "matches": 159,
+  "records": 318,
+  "users_found": 154,
+  "division_distribution": {
+    "슈퍼 챌린지": 7,
+    "챔피언스": 6,
+    "슈퍼 챔피언스": 3,
+    "챌린저1": 1
+  },
+  "errors": {}
+}
