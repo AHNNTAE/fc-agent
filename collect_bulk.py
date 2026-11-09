@@ -3,6 +3,8 @@ FC 온라인 공식경기 대량 수집 (눈덩이 방식)
 - 시작 유저 → 최근 경기 → 상대 유저 → 그 유저의 최근 경기 → ...
 - 결과는 data/fc_dataset.db (SQLite)에 저장. 중간에 멈춰도 다시 실행하면 이어서 수집
 - 경기 원본(JSON)은 압축해서 저장 → 전처리 단계에서 필요한 항목을 꺼내 씀
+- SEED_NICKNAMES에 넣은 시작 유저는 대기 중인 유저보다 먼저 처리함
+- 응답 헤더(x-ratelimit-remaining)로 남은 일일 한도를 보고, 0이 되면 바로 멈춤
 """
 import os
 import time
@@ -15,10 +17,12 @@ import requests
 from dotenv import load_dotenv
 
 # ---------------- 설정 ----------------
-SEED_NICKNAMES = ["우태안"]   # 시작 유저. 다른 등급 닉네임을 추가하면 등급 분포가 넓어짐
-TARGET_MATCHES = 14000        # 목표 경기 수 (경기 1개 = 유저 기록 2건 → 약 28,000건)
+# 시작 유저. 여러 등급을 섞어 넣으면 등급 분포가 넓어짐 (랭커, 중간 등급, 낮은 등급)
+SEED_NICKNAMES = ["태연", "크몽신경섭", "우태안"]
+TARGET_MATCHES = 14000        # 목표 경기 수 (경기 1개 = 유저 기록 2건)
 MATCHES_PER_USER = 20         # 유저 1명당 가져올 최근 공식경기 수
 MAX_PER_SEC = 4.5             # 초당 최대 호출 수 (한도 초과 방지)
+KEEP_REMAINING = 0            # 남겨 둘 한도 (사이트용으로 남기고 싶으면 예: 50)
 MATCHTYPE = 50                # 공식경기
 DB_PATH = os.path.join("data", "fc_dataset.db")
 # --------------------------------------
@@ -28,17 +32,30 @@ BASE = "https://open.api.nexon.com/fconline/v1"
 HEADERS = {"x-nxopen-api-key": os.getenv("NEXON_API_KEY")}
 
 _last_call = 0.0
-stats = {"calls": 0, "429": 0, "errors": 0}
+stats = {"calls": 0, "429": 0, "errors": 0, "remaining": None, "limit": None}
 
 
 class DailyLimit(Exception):
     pass
 
 
+def read_limit_headers(r):
+    """응답 헤더에서 일일 한도와 남은 횟수를 읽어 둠"""
+    try:
+        if "x-ratelimit-remaining" in r.headers:
+            stats["remaining"] = int(r.headers["x-ratelimit-remaining"])
+        if "x-ratelimit-limit" in r.headers:
+            stats["limit"] = int(r.headers["x-ratelimit-limit"])
+    except ValueError:
+        pass
+
+
 def call(path, params):
-    """초당 호출 수를 지키며 API 호출. 429가 계속되면 일일 한도로 보고 멈춤"""
+    """초당 호출 수를 지키며 API 호출. 남은 일일 한도가 없으면 호출하지 않고 멈춤"""
     global _last_call
-    for attempt in range(6):
+    for attempt in range(4):
+        if stats["remaining"] is not None and stats["remaining"] <= KEEP_REMAINING:
+            raise DailyLimit(f"오늘 남은 한도가 {stats['remaining']}회입니다")
         wait = (1.0 / MAX_PER_SEC) - (time.time() - _last_call)
         if wait > 0:
             time.sleep(wait)
@@ -50,10 +67,15 @@ def call(path, params):
             stats["errors"] += 1
             time.sleep(2)
             continue
+        read_limit_headers(r)
         if r.status_code == 200:
             return r.json()
         if r.status_code == 429:
             stats["429"] += 1
+            # 일일 한도를 다 쓴 경우: 재시도하지 않고 바로 멈춤
+            if stats["remaining"] is not None and stats["remaining"] <= 0:
+                raise DailyLimit("오늘 일일 한도를 다 썼습니다")
+            # 순간 호출이 몰린 경우: 잠깐 쉬고 재시도
             time.sleep(2 * (attempt + 1))
             continue
         stats["errors"] += 1
@@ -83,32 +105,49 @@ def fetch_division(ouid):
     return None, None
 
 
+def next_user(conn, seed_ouids):
+    """아직 처리 안 한 시작 유저가 있으면 먼저, 없으면 대기 순서대로"""
+    for ouid in seed_ouids:
+        row = conn.execute("SELECT processed FROM users WHERE ouid = ?", (ouid,)).fetchone()
+        if row and row[0] == 0:
+            return ouid
+    row = conn.execute("SELECT ouid FROM users WHERE processed = 0 "
+                       "ORDER BY rowid LIMIT 1").fetchone()
+    return row[0] if row else None
+
+
+def remaining_text():
+    if stats["remaining"] is None:
+        return "남은 한도 알 수 없음"
+    return f"남은 한도 {stats['remaining']:,}/{stats['limit'] or '?'}회"
+
+
 def main():
     os.makedirs("data", exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     init_db(conn)
-
-    for nick in SEED_NICKNAMES:
-        data = call("/id", {"nickname": nick})
-        if data and data.get("ouid"):
-            add_user(conn, data["ouid"])
-            print(f"시작 유저 추가: {nick}")
-        else:
-            print(f"시작 유저를 찾지 못함: {nick}")
-    conn.commit()
-
     count = conn.execute("SELECT COUNT(*) FROM matches").fetchone()[0]
-    print(f"이미 저장된 경기: {count}개 / 목표 {TARGET_MATCHES}개\n")
-    start, start_count = time.time(), count
 
     try:
+        seed_ouids = []
+        for nick in SEED_NICKNAMES:
+            data = call("/id", {"nickname": nick})
+            if data and data.get("ouid"):
+                add_user(conn, data["ouid"])
+                seed_ouids.append(data["ouid"])
+                print(f"시작 유저 추가: {nick}")
+            else:
+                print(f"시작 유저를 찾지 못함: {nick} (닉네임이 바뀌었을 수 있음)")
+        conn.commit()
+
+        print(f"이미 저장된 경기: {count:,}개 / 목표 {TARGET_MATCHES:,}개 | {remaining_text()}\n")
+        start, start_count = time.time(), count
+
         while count < TARGET_MATCHES:
-            row = conn.execute("SELECT ouid FROM users WHERE processed = 0 "
-                               "ORDER BY rowid LIMIT 1").fetchone()
-            if not row:
+            ouid = next_user(conn, seed_ouids)
+            if not ouid:
                 print("더 따라갈 유저가 없습니다. 시작 유저를 추가해 주세요.")
                 break
-            ouid = row[0]
 
             div, ach = fetch_division(ouid)
             mids = call("/user/match", {"ouid": ouid, "matchtype": MATCHTYPE,
@@ -131,20 +170,16 @@ def main():
 
                 if count % 100 == 0:
                     conn.commit()
-                    done = count - start_count
-                    rate = done / max(time.time() - start, 1)
-                    eta = (TARGET_MATCHES - count) / rate / 60 if rate else 0
                     print(f"[{datetime.now():%H:%M:%S}] 경기 {count:,}/{TARGET_MATCHES:,} "
-                          f"| 호출 {stats['calls']:,} | 429 {stats['429']} "
-                          f"| 남은 시간 약 {eta:.0f}분")
+                          f"| 이번 실행 +{count - start_count:,} | {remaining_text()}")
 
             conn.execute("UPDATE users SET processed = 1, division = ?, achievement_date = ? "
                          "WHERE ouid = ?", (div, ach, ouid))
             conn.commit()
 
     except DailyLimit as e:
-        print(f"\n수집 중단: {e}")
-        print("호출 한도에 걸린 것 같습니다. 나중에 다시 실행하면 이어서 수집합니다.")
+        print(f"\n수집 종료: {e}")
+        print("자정 이후 다시 실행하면 이어서 수집합니다.")
     except KeyboardInterrupt:
         print("\n사용자가 중단했습니다. 다시 실행하면 이어서 수집합니다.")
     finally:
@@ -152,7 +187,8 @@ def main():
         users = conn.execute("SELECT COUNT(*), SUM(processed) FROM users").fetchone()
         print(f"\n저장된 경기: {count:,}개 (유저 기록 약 {count * 2:,}건)")
         print(f"발견한 유저: {users[0]:,}명 / 등급 확인: {users[1] or 0:,}명")
-        print(f"총 호출: {stats['calls']:,}회 / 429: {stats['429']}회 / 기타 오류: {stats['errors']}회")
+        print(f"이번 실행 호출: {stats['calls']:,}회 / 429: {stats['429']}회 / 기타 오류: {stats['errors']}회")
+        print(remaining_text())
         conn.close()
 
 
