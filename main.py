@@ -34,20 +34,37 @@ class TacticIn(BaseModel):
     memo: str
 
 
+def nexon_error(e):
+    """넥슨 API 오류를 (상태코드, 사용자 메시지)로 변환"""
+    res = e.response
+    code = res.status_code if res is not None else None
+    name = ""
+    try:
+        name = res.json().get("error", {}).get("name", "")
+    except Exception:
+        pass
+    print(f"[nexon] HTTP {code} {name}")  # 서버 로그 확인용
+    if code == 429 or name == "OPENAPI00007":
+        return 429, "넥슨 API 하루 호출 한도를 다 썼습니다. 내일 다시 시도해 주세요."
+    if name == "OPENAPI00005":
+        return 502, "넥슨 API 키가 올바르지 않습니다. 서버의 NEXON_API_KEY 설정을 확인해 주세요."
+    if name in ("OPENAPI00010", "OPENAPI00011") or code == 503:
+        return 503, "넥슨 게임 또는 API 점검 중입니다. 점검 후 다시 시도해 주세요."
+    if code in (401, 403):
+        return 502, "넥슨 API 접근이 거부되었습니다. API 키 설정을 확인해 주세요."
+    if code in (400, 404):
+        return 404, "해당 닉네임의 유저를 찾지 못했습니다."
+    return 502, f"넥슨 서버 오류입니다 ({code}). 잠시 후 다시 시도해 주세요."
+
+
+
 def find_ouid(nickname):
     if nickname in ouid_cache:
         return ouid_cache[nickname]
     try:
         ouid = get_ouid(nickname)
     except requests.HTTPError as e:
-        code = e.response.status_code if e.response is not None else None
-        if code == 429:
-            raise HTTPException(429, "넥슨 API 하루 호출 한도를 다 썼습니다. 내일 다시 시도해 주세요. (수집을 돌린 날이면 한도가 남아 있지 않을 수 있어요)")
-        if code in (401, 403):
-            raise HTTPException(502, "넥슨 API 키가 올바르지 않습니다. .env의 NEXON_API_KEY를 확인해 주세요.")
-        if code in (400, 404):
-            raise HTTPException(404, "해당 닉네임의 유저를 찾지 못했습니다.")
-        raise HTTPException(502, f"넥슨 서버 오류입니다 ({code}). 잠시 후 다시 시도해 주세요.")
+        raise HTTPException(*nexon_error(e))
     except requests.RequestException:
         raise HTTPException(502, "넥슨 서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.")
     ouid_cache[nickname] = ouid
