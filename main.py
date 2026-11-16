@@ -9,6 +9,7 @@ from db import init_db, add_tactic_change, list_tactic_changes, delete_tactic_ch
 from collect import collect_matches
 from analysis import analyze, load_matches, compare
 from coach import Coach
+from radar import compute_radar
 
 app = FastAPI(title="FC 에이전트")
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -38,8 +39,15 @@ def find_ouid(nickname):
         return ouid_cache[nickname]
     try:
         ouid = get_ouid(nickname)
-    except requests.HTTPError:
-        raise HTTPException(404, "해당 닉네임의 유저를 찾지 못했습니다.")
+    except requests.HTTPError as e:
+        code = e.response.status_code if e.response is not None else None
+        if code == 429:
+            raise HTTPException(429, "넥슨 API 하루 호출 한도를 다 썼습니다. 내일 다시 시도해 주세요. (수집을 돌린 날이면 한도가 남아 있지 않을 수 있어요)")
+        if code in (401, 403):
+            raise HTTPException(502, "넥슨 API 키가 올바르지 않습니다. .env의 NEXON_API_KEY를 확인해 주세요.")
+        if code in (400, 404):
+            raise HTTPException(404, "해당 닉네임의 유저를 찾지 못했습니다.")
+        raise HTTPException(502, f"넥슨 서버 오류입니다 ({code}). 잠시 후 다시 시도해 주세요.")
     except requests.RequestException:
         raise HTTPException(502, "넥슨 서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.")
     ouid_cache[nickname] = ouid
@@ -97,6 +105,17 @@ def api_report(nickname: str):
     recent = [{k: m[k] for k in keys} for m in load_matches(ouid, limit=15)]
     return {"nickname": nickname, "stats": report["stats"],
             "insights": report["insights"], "recent": recent}
+
+
+# ---------- 내 등급 기준 레이더 ----------
+
+@app.get("/api/radar")
+def api_radar(nickname: str):
+    ouid = find_ouid(nickname.strip())
+    try:
+        return compute_radar(ouid)
+    except requests.RequestException:
+        raise HTTPException(502, "넥슨 서버에서 등급 정보를 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.")
 
 
 # ---------- AI 코치 ----------

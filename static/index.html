@@ -12,6 +12,7 @@
     --win: #3fb950; --draw: #8b949e; --lose: #f85149;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body { margin: 0; background: var(--bg); color: var(--text);
          font-family: "Pretendard", "Malgun Gothic", sans-serif; line-height: 1.5; }
   .wrap { max-width: 1120px; margin: 0 auto; padding: 32px 16px 60px; }
@@ -40,6 +41,7 @@
           padding: 20px; margin-bottom: 16px; }
   .card h2 { margin: 0 0 14px; font-size: 17px; }
   .card h2 small { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 6px; }
+  .card h3 { margin: 16px 0 8px; font-size: 15px; }
 
   .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
   @media (max-width: 560px) { .kpis { grid-template-columns: repeat(2, 1fr); } }
@@ -60,6 +62,14 @@
   .r { font-weight: 700; }
   .r.승 { color: var(--win); } .r.무 { color: var(--draw); } .r.패 { color: var(--lose); }
   details summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+
+  /* 내 등급 기준 비교 */
+  .radar-box { position: relative; height: 340px; margin: 4px 0 8px; }
+  .gaps { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+  .gaps li { background: var(--card2); border-left: 3px solid #e3b341;
+             border-radius: 8px; padding: 10px 12px; font-size: 14px; }
+  .gaps li b { color: #e3b341; }
+  .gaps li span { color: var(--muted); font-size: 12px; display: block; }
 
   /* 전술 변경 */
   .t-form { display: grid; grid-template-columns: 190px 1fr auto; gap: 8px; margin-bottom: 14px; }
@@ -96,7 +106,7 @@
 <div class="wrap">
   <header>
     <h1>FC <span>에이전트</span></h1>
-    <p>내 경기 기록을 분석해주는 AI 전술 코치</p>
+    <p>랭커가 아닌 내 등급 기준으로 보는 FC 온라인 경기 분석</p>
   </header>
 
   <div class="search">
@@ -110,6 +120,11 @@
       <section class="card">
         <h2 id="title">경기 분석 리포트</h2>
         <div class="kpis" id="kpis"></div>
+      </section>
+
+      <section class="card">
+        <h2>내 등급 기준 비교 <small id="radarSub"></small></h2>
+        <div id="radarBody"><p class="muted">불러오는 중...</p></div>
       </section>
 
       <section class="card">
@@ -167,6 +182,7 @@ let chatBusy = false;
 let tactics = [];
 let selectedTacticId = null;
 let compareChart = null;
+let radarChart = null;
 
 // ---------- 공통 ----------
 function esc(s) {
@@ -209,6 +225,7 @@ async function runAnalysis() {
     renderReport(r);
     $("#result").hidden = false;
     $("#tDate").value = nowLocal();
+    loadRadar();
     await loadTactics();
     setStatus("");
     $("#chatLog").innerHTML = "";
@@ -253,6 +270,95 @@ function renderReport(r) {
 
   $("#allStats").innerHTML = Object.entries(s).map(([k, v]) =>
     `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join("");
+}
+
+// ---------- 내 등급 기준 비교 (레이더) ----------
+async function loadRadar() {
+  if (radarChart) { radarChart.destroy(); radarChart = null; }
+  $("#radarSub").textContent = "";
+  $("#radarBody").innerHTML = `<p class="muted">등급 정보를 불러오는 중...</p>`;
+  try {
+    const r = await api(`/api/radar?nickname=${encodeURIComponent(currentNick)}`);
+    renderRadar(r);
+  } catch (e) {
+    $("#radarBody").innerHTML = `<p class="muted">${esc(e.message)}</p>`;
+  }
+}
+
+function renderRadar(r) {
+  if (!r.available) {
+    $("#radarBody").innerHTML = `<p class="muted">${esc(r.reason)}</p>`;
+    return;
+  }
+  $("#radarSub").textContent = `${r.tier} 유저 ${r.tier_users}명과 비교 · 내 최근 ${r.matches}경기 기준`;
+  const val = (v, u) => (v === null || v === undefined ? "-" : `${v}${u}`);
+  const score = (v) => (v === null || v === undefined ? "-" : `${Math.round(v)}`);
+
+  let gapsHtml;
+  if (!r.next_tier) {
+    gapsHtml = `<p class="muted">최상위 등급이라 위 등급과의 비교는 없습니다.</p>`;
+  } else if (!r.gaps.length) {
+    gapsHtml = `<p class="muted">모든 지표가 ${esc(r.next_tier)} 평균 수준 이상입니다.</p>`;
+  } else {
+    gapsHtml = `<ul class="gaps">${r.gaps.map((g) => `
+      <li><b>${esc(g.label)}</b> — 나 ${esc(val(g.me, g.unit))} → ${esc(r.next_tier)} 평균 ${esc(val(g.next_mean, g.unit))}
+        <span>${esc(g.desc)}</span></li>`).join("")}</ul>`;
+  }
+
+  $("#radarBody").innerHTML = `
+    <div class="radar-box"><canvas id="radarChart"></canvas></div>
+    <p class="muted">점수는 ${esc(r.tier)} 유저 중 내 위치입니다 (0~100, 50 = 등급 중간, 높을수록 좋음).</p>
+    <h3>${r.next_tier ? `${esc(r.next_tier)}로 가려면 부족한 지표` : "승급 비교"}</h3>
+    ${gapsHtml}
+    <details style="margin-top:12px">
+      <summary>지표별 실제 값 보기</summary>
+      <table style="margin-top:8px">
+        <thead><tr><th>지표</th><th class="num">나</th><th class="num">${esc(r.tier)} 평균</th>
+          <th class="num">${r.next_tier ? esc(r.next_tier) + " 평균" : "-"}</th><th class="num">내 점수</th></tr></thead>
+        <tbody>${r.axes.map((a) => `
+          <tr><td>${esc(a.label)}</td>
+            <td class="num">${esc(val(a.me, a.unit))}</td>
+            <td class="num">${esc(val(a.tier_mean, a.unit))}</td>
+            <td class="num">${esc(val(a.next_mean, a.unit))}</td>
+            <td class="num">${esc(score(a.me_score))}</td></tr>`).join("")}
+        </tbody>
+      </table>
+    </details>`;
+
+  const labels = r.axes.map((a) => a.label);
+  const datasets = [
+    { label: "나", data: r.axes.map((a) => a.me_score), borderColor: "#2f81f7",
+      backgroundColor: "#2f81f733", borderWidth: 2, pointRadius: 3 },
+    { label: `${r.tier} 평균`, data: r.axes.map((a) => a.tier_score), borderColor: "#8b949e",
+      backgroundColor: "transparent", borderDash: [4, 4], borderWidth: 1.5, pointRadius: 0 },
+  ];
+  if (r.next_tier) {
+    datasets.push({ label: `${r.next_tier} 평균`, data: r.axes.map((a) => a.next_score),
+      borderColor: "#e3b341", backgroundColor: "transparent", borderDash: [4, 4],
+      borderWidth: 1.5, pointRadius: 0 });
+  }
+  radarChart = new Chart($("#radarChart"), {
+    type: "radar",
+    data: { labels, datasets },
+    options: {
+      maintainAspectRatio: false,
+      spanGaps: true,
+      plugins: {
+        legend: { labels: { color: "#e6edf3" } },
+        tooltip: { callbacks: { label: (ctx) => {
+          const a = r.axes[ctx.dataIndex];
+          const raw = ctx.datasetIndex === 0 ? a.me : ctx.datasetIndex === 1 ? a.tier_mean : a.next_mean;
+          return `${ctx.dataset.label}: ${score(ctx.raw)}점 (${val(raw, a.unit)})`;
+        } } },
+      },
+      scales: { r: {
+        min: 0, max: 100,
+        ticks: { stepSize: 25, color: "#8b949e", backdropColor: "transparent" },
+        grid: { color: "#2a313c" }, angleLines: { color: "#2a313c" },
+        pointLabels: { color: "#e6edf3", font: { size: 12 } },
+      } },
+    },
+  });
 }
 
 // ---------- 전술 변경 전후 비교 ----------
@@ -331,7 +437,6 @@ function renderCompare(t) {
 
 function drawCompareChart(c) {
   if (compareChart) compareChart.destroy();
-  // 단위가 같은 % 지표만 그래프로 비교
   const keys = ["승률", "내 유효슈팅 대비 득점률", "상대 유효슈팅 대비 실점률"];
   const rows = keys.map((k) => c.rows.find((r) => r.key === k));
   compareChart = new Chart($("#compareChart"), {
