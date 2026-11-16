@@ -1,0 +1,1 @@
+{"features": ["x", "y", "distance", "angle", "in_penalty", "assist", "sp_grade", "sp_level", "type_1", "type_2", "type_3", "type_4", "type_6", "type_7", "type_8", "type_9", "type_10", "type_12", "type_13", "type_14", "type_other"], "numeric": ["x", "y", "distance", "angle", "in_penalty", "assist", "sp_grade", "sp_level"], "types": [1, 2, 3, 4, 6, 7, 8, 9, 10, 12, 13, 14]}
