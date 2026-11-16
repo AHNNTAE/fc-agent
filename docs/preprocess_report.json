@@ -1,39 +1,39 @@
 {
-  "matches": 2703,
-  "records_raw": 5406,
-  "records_clean": 4438,
+  "matches": 3608,
+  "records_raw": 7216,
+  "records_clean": 5924,
   "preprocess_steps": [
     {
       "step": "중복 기록 제거",
       "removed": 0,
-      "remaining": 5406
+      "remaining": 7216
     },
     {
       "step": "몰수·비정상 종료 경기 제거 (matchEndType != 0)",
-      "removed": 968,
-      "remaining": 4438
+      "removed": 1292,
+      "remaining": 5924
     },
     {
       "step": "상대 기록이 없는 경기 제거",
       "removed": 0,
-      "remaining": 4438
+      "remaining": 5924
     },
     {
       "step": "결과 값이 없거나 이상한 기록 제거",
       "removed": 0,
-      "remaining": 4438
+      "remaining": 5924
     },
     {
       "step": "패스 시도 0회 기록 제거 (사실상 경기 미진행)",
       "removed": 0,
-      "remaining": 4438
+      "remaining": 5924
     }
   ],
-  "draws_excluded": 676,
-  "dataset_rows": 3762,
+  "draws_excluded": 898,
+  "dataset_rows": 5026,
   "label_counts": {
-    "win=1": 1881,
-    "win=0": 1881
+    "win=1": 2513,
+    "win=0": 2513
   },
   "features": [
     "possession",
@@ -60,31 +60,31 @@
     "opp_shoot_total",
     "opp_shoot_effective"
   ],
-  "records_with_division": 2357,
+  "records_with_division": 3149,
   "shots": {
-    "shots_raw": 32267,
+    "shots_raw": 43232,
     "preprocess_steps": [
       {
         "step": "몰수·비정상 종료 경기의 슈팅 제거",
-        "removed": 4416,
-        "remaining": 27851
+        "removed": 5833,
+        "remaining": 37399
       },
       {
         "step": "좌표가 없거나 범위(0~1)를 벗어난 슈팅 제거",
-        "removed": 12,
-        "remaining": 27839
+        "removed": 17,
+        "remaining": 37382
       },
       {
         "step": "결과 값이 1·2·3이 아닌 슈팅 제거",
         "removed": 0,
-        "remaining": 27839
+        "remaining": 37382
       }
     ],
-    "label_check_match_rate": 100.0,
-    "dataset_rows": 27839,
+    "label_check_match_rate": 99.9,
+    "dataset_rows": 37382,
     "label_counts": {
-      "goal=1": 11995,
-      "goal=0": 15844
+      "goal=1": 16113,
+      "goal=0": 21269
     },
     "features": [
       "x",
@@ -98,23 +98,23 @@
       "sp_level"
     ],
     "result_values": {
-      "3": 14291,
-      "1": 11022,
-      "2": 6954
+      "3": 19137,
+      "1": 14808,
+      "2": 9287
     },
     "type_values": {
-      "2": 9454,
-      "1": 6693,
-      "3": 6501,
-      "6": 3140,
-      "7": 2618,
-      "8": 1255,
-      "13": 1115,
-      "14": 641,
-      "9": 300,
-      "12": 292,
-      "4": 153,
-      "10": 105
+      "2": 12794,
+      "1": 8938,
+      "3": 8542,
+      "6": 4286,
+      "7": 3444,
+      "8": 1717,
+      "13": 1507,
+      "14": 856,
+      "9": 390,
+      "12": 388,
+      "4": 232,
+      "10": 138
     }
   }
 }
