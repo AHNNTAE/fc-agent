@@ -4,7 +4,8 @@ FC 온라인 공식경기 대량 수집 (눈덩이 방식)
 - 결과는 data/fc_dataset.db (SQLite)에 저장. 중간에 멈춰도 다시 실행하면 이어서 수집
 - 경기 원본(JSON)은 압축해서 저장 → 전처리 단계에서 필요한 항목을 꺼내 씀
 - SEED_NICKNAMES에 넣은 시작 유저는 대기 중인 유저보다 먼저 처리함
-- 응답 헤더(x-ratelimit-remaining)로 남은 일일 한도를 보고, 0이 되면 바로 멈춤
+- 넥슨은 남은 한도를 429 응답에만 알려주므로, 이번 실행의 호출 수를 직접 세서
+  MAX_CALLS_PER_RUN에 도달하면 멈춤 (나머지 한도는 사이트용으로 남김)
 """
 import os
 import time
@@ -22,7 +23,8 @@ SEED_NICKNAMES = ["태연", "크몽신경섭", "우태안"]
 TARGET_MATCHES = 14000        # 목표 경기 수 (경기 1개 = 유저 기록 2건)
 MATCHES_PER_USER = 20         # 유저 1명당 가져올 최근 공식경기 수
 MAX_PER_SEC = 4.5             # 초당 최대 호출 수 (한도 초과 방지)
-KEEP_REMAINING = 0            # 남겨 둘 한도 (사이트용으로 남기고 싶으면 예: 50)
+MAX_CALLS_PER_RUN = 970       # 이번 실행에서 쓸 최대 호출 수 (일일 1,000회 중 30회는 사이트용으로 남김)
+KEEP_REMAINING = 0            # 넥슨이 남은 한도를 알려준 경우 이 값 이하가 되면 멈춤
 MATCHTYPE = 50                # 공식경기
 DB_PATH = os.path.join("data", "fc_dataset.db")
 # --------------------------------------
@@ -40,7 +42,7 @@ class DailyLimit(Exception):
 
 
 def read_limit_headers(r):
-    """응답 헤더에서 일일 한도와 남은 횟수를 읽어 둠"""
+    """응답 헤더에서 일일 한도와 남은 횟수를 읽어 둠 (넥슨은 주로 429 응답에만 넣어 줌)"""
     try:
         if "x-ratelimit-remaining" in r.headers:
             stats["remaining"] = int(r.headers["x-ratelimit-remaining"])
@@ -51,9 +53,12 @@ def read_limit_headers(r):
 
 
 def call(path, params):
-    """초당 호출 수를 지키며 API 호출. 남은 일일 한도가 없으면 호출하지 않고 멈춤"""
+    """초당 호출 수를 지키며 API 호출. 이번 실행 호출 상한이나 일일 한도에 닿으면 멈춤"""
     global _last_call
     for attempt in range(4):
+        if stats["calls"] >= MAX_CALLS_PER_RUN:
+            raise DailyLimit(f"이번 실행 호출 상한 {MAX_CALLS_PER_RUN:,}회에 도달했습니다 "
+                             f"(남은 한도는 사이트용)")
         if stats["remaining"] is not None and stats["remaining"] <= KEEP_REMAINING:
             raise DailyLimit(f"오늘 남은 한도가 {stats['remaining']}회입니다")
         wait = (1.0 / MAX_PER_SEC) - (time.time() - _last_call)
@@ -117,9 +122,10 @@ def next_user(conn, seed_ouids):
 
 
 def remaining_text():
+    used = f"이번 실행 호출 {stats['calls']:,}/{MAX_CALLS_PER_RUN:,}회"
     if stats["remaining"] is None:
-        return "남은 한도 알 수 없음"
-    return f"남은 한도 {stats['remaining']:,}/{stats['limit'] or '?'}회"
+        return used
+    return f"{used} | 넥슨 기준 남은 한도 {stats['remaining']:,}/{stats['limit'] or '?'}회"
 
 
 def main():
@@ -141,7 +147,7 @@ def main():
         conn.commit()
 
         print(f"이미 저장된 경기: {count:,}개 / 목표 {TARGET_MATCHES:,}개 | {remaining_text()}\n")
-        start, start_count = time.time(), count
+        start_count = count
 
         while count < TARGET_MATCHES:
             ouid = next_user(conn, seed_ouids)
@@ -179,7 +185,7 @@ def main():
 
     except DailyLimit as e:
         print(f"\n수집 종료: {e}")
-        print("자정 이후 다시 실행하면 이어서 수집합니다.")
+        print("내일 다시 실행하면 이어서 수집합니다.")
     except KeyboardInterrupt:
         print("\n사용자가 중단했습니다. 다시 실행하면 이어서 수집합니다.")
     finally:
